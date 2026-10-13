@@ -39,7 +39,7 @@ This project is a great starting point for anyone who wants to build their own c
 
 ## 🖼️ Preview
 
-> *(Add your app screenshot here)*
+> 
 >
 > 
 > ![a-browser screenshot](./assets/a-browser.png)
