@@ -42,7 +42,7 @@ This project is a great starting point for anyone who wants to build their own c
 > 
 >
 > 
-> ![a-browser screenshot](./assets/abcd.png)
+> ![a-browser screenshot](./assets/a-browser.png)
 >
 
 ---
