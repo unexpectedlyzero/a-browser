@@ -41,9 +41,9 @@ This project is a great starting point for anyone who wants to build their own c
 
 > *(Add your app screenshot here)*
 >
-> ```markdown
+> 
 > ![a-browser screenshot](./assets/a-browser.png)
-> ```
+>
 
 ---
 
