@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>a-browser</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root { color-scheme: light; font-family: "Segoe UI", Arial, sans-serif; }
+        body { background: #f5f5f4; color: #292927; }
+        #browserToolbar { background: #f5f5f4; border-color: #dededb; }
+        .tab-active { background-color: #fff; border-color: #dededb; color: #292927; box-shadow: 0 1px 2px #0000000a; }
+        .tab-inactive { background-color: #eaeae7; border-color: transparent; color: #64645f; }
+        .tab-inactive:hover { background-color: #e1e1dd; }
+        .toolbar-button { color: #555650; transition: background-color 120ms ease, color 120ms ease; }
+        .toolbar-button:hover { background: #e8e8e4; color: #242520; }
+        #urlInput { background: #fff; border-color: #d9d9d5; box-shadow: 0 1px 2px #00000008; }
+        #urlInput:focus { border-color: #9c9c95; box-shadow: 0 0 0 2px #77776f18; }
+        #sideModal { border-color: #e4e4e0; box-shadow: -8px 4px 24px #00000012; }
+        #findBar { border-color: #dededb; background: #f5f5f4; }
+        #findInput { border: 1px solid #d9d9d5; outline: none; }
+        #findInput:focus { border-color: #888880; }
+        .tab-item { min-width: 110px; max-width: 210px; }
+        .drag-region { -webkit-app-region: drag; }
+        .no-drag { -webkit-app-region: no-drag; }
+        #sideModal { display: none; }
+        #sideModal.open { display: flex; }
+    </style>
+</head>
+<body class="bg-[#ededf0] m-0 select-none overflow-hidden font-sans relative">
+
+    <!-- Browser Toolbar -->
+    <div id="browserToolbar" class="h-[100px] flex flex-col justify-between border-b px-3 pt-2 drag-region">
+        <div class="flex items-center justify-between">
+            <div id="tabContainer" class="flex items-center space-x-1 overflow-x-auto no-scrollbar no-drag">
+                <button id="newTabBtn" title="New tab" class="toolbar-button px-2.5 py-1 rounded-md text-base ml-1">+</button>
+            </div>
+            <div class="flex items-center space-x-1 no-drag pr-1">
+                <button id="minBtn" title="Minimize" class="toolbar-button px-3 py-1 rounded text-sm">&#8211;</button>
+                <button id="maxBtn" title="Maximize" class="toolbar-button px-3 py-1 rounded text-sm">&#x25A1;</button>
+                <button id="closeBtn" title="Close" class="px-3 py-1 text-gray-600 hover:bg-red-600 hover:text-white rounded text-sm">&#x2715;</button>
+            </div>
+        </div>
+
+        <div class="flex items-center space-x-2 pb-2 no-drag">
+            <button id="backBtn" title="Back" class="toolbar-button p-1.5 rounded">←</button>
+            <button id="forwardBtn" title="Forward" class="toolbar-button p-1.5 rounded">→</button>
+            <button id="reloadBtn" title="Reload" class="toolbar-button p-1.5 rounded">↻</button>
+            
+            <input type="text" id="urlInput" placeholder="Search or enter address" 
+                class="flex-1 border rounded-full px-4 py-2 text-sm focus:outline-none">
+
+            <button id="findBtn" title="Find in page (Ctrl+F)" class="toolbar-button px-2.5 py-1.5 text-xs rounded">Find</button>
+            <button id="starBtn" title="Bookmark this page" class="toolbar-button px-2.5 py-1.5 text-sm rounded">☆</button>
+            <button id="bookmarksMenuBtn" class="toolbar-button px-2.5 py-1.5 text-xs rounded">Bookmarks</button>
+            <button id="historyBtn" class="toolbar-button px-2.5 py-1.5 text-xs rounded">History</button>
+        </div>
+
+        <div id="findBar" class="hidden h-[42px] items-center justify-end gap-2 border-t px-1 no-drag">
+            <input id="findInput" type="text" placeholder="Find in page" class="w-64 rounded px-3 py-1.5 text-sm">
+            <span id="findCount" class="min-w-12 text-center text-xs text-gray-500">0 matches</span>
+            <button id="findPrevious" title="Previous match" class="toolbar-button rounded px-2 py-1">↑</button>
+            <button id="findNext" title="Next match" class="toolbar-button rounded px-2 py-1">↓</button>
+            <button id="closeFind" title="Close find" class="toolbar-button rounded px-2 py-1">×</button>
+        </div>
+    </div>
+
+    <!-- Slide-out Drawer for History / Bookmarks -->
+    <div id="sideModal" class="absolute top-[100px] right-0 w-80 h-[calc(100vh-100px)] bg-white border-l z-50 flex-col p-4">
+        <div class="flex justify-between items-center border-b pb-2 mb-3">
+            <h3 id="modalTitle" class="font-bold text-gray-700 text-sm"></h3>
+            <button id="closeModal" class="text-gray-500 hover:text-black font-bold text-base px-1 cursor-pointer">×</button>
+        </div>
+        <div id="modalContent" class="flex-1 overflow-y-auto space-y-2 text-sm"></div>
+    </div>
+
+    <script>
+        const { ipcRenderer } = require('electron');
+        
+        let tabs = [];
+        let activeTabId = null;
+        let tabCounter = 0;
+
+        const tabContainer = document.getElementById('tabContainer');
+        const newTabBtn = document.getElementById('newTabBtn');
+        const urlInput = document.getElementById('urlInput');
+        const browserToolbar = document.getElementById('browserToolbar');
+        const findBar = document.getElementById('findBar');
+        const findInput = document.getElementById('findInput');
+        const findCount = document.getElementById('findCount');
+        const backBtn = document.getElementById('backBtn');
+        const forwardBtn = document.getElementById('forwardBtn');
+        const reloadBtn = document.getElementById('reloadBtn');
+        const starBtn = document.getElementById('starBtn');
+        const bookmarksMenuBtn = document.getElementById('bookmarksMenuBtn');
+        const historyBtn = document.getElementById('historyBtn');
+        const sideModal = document.getElementById('sideModal');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalContent = document.getElementById('modalContent');
+        let findHasStarted = false;
+
+        document.getElementById('minBtn').onclick = () => ipcRenderer.send('window-min');
+        document.getElementById('maxBtn').onclick = () => ipcRenderer.send('window-max');
+        document.getElementById('closeBtn').onclick = () => ipcRenderer.send('window-close');
+        function setDrawerOpen(isOpen) {
+            sideModal.classList.toggle('open', isOpen);
+            ipcRenderer.send('drawer-toggle', isOpen);
+        }
+
+        document.getElementById('closeModal').onclick = () => setDrawerOpen(false);
+
+        function createPageEntry(item) {
+            const div = document.createElement('div');
+            div.className = 'p-2.5 hover:bg-gray-100 rounded cursor-pointer border-b flex flex-col';
+
+            const title = document.createElement('div');
+            title.className = 'font-medium truncate text-gray-800';
+            title.textContent = item.title || item.url;
+
+            const url = document.createElement('div');
+            url.className = 'text-xs text-gray-400 truncate';
+            url.textContent = item.url;
+
+            div.append(title, url);
+            div.onclick = () => {
+                urlInput.value = item.url;
+                ipcRenderer.send('navigate', { tabId: activeTabId, url: item.url });
+                setDrawerOpen(false);
+            };
+            return div;
+        }
+
+        function createTab(initialUrl = 'https://www.google.com') {
+            const tabId = 'tab_' + (++tabCounter);
+            tabs.push({ id: tabId, title: 'New Tab', url: initialUrl });
+            ipcRenderer.send('create-tab', { tabId, url: initialUrl });
+            switchTab(tabId);
+            renderTabs();
+        }
+
+        function switchTab(tabId) {
+            activeTabId = tabId;
+            findHasStarted = false;
+            findCount.textContent = '0 matches';
+            ipcRenderer.send('switch-tab', tabId);
+            renderTabs();
+            const currentTab = tabs.find(t => t.id === tabId);
+            if (currentTab) urlInput.value = currentTab.url;
+        }
+
+        function renderTabs() {
+            tabContainer.querySelectorAll('.tab-item').forEach(el => el.remove());
+            tabs.forEach(tab => {
+                const isActive = tab.id === activeTabId;
+                const tabEl = document.createElement('div');
+                tabEl.className = `tab-item flex items-center px-3 py-1.5 rounded-t-lg text-xs font-medium border-t border-x cursor-pointer shadow-sm w-44 justify-between transition ${isActive ? 'tab-active' : 'tab-inactive'}`;
+                tabEl.onclick = () => switchTab(tab.id);
+
+                const titleSpan = document.createElement('span');
+                titleSpan.className = 'truncate pr-2';
+                titleSpan.textContent = tab.title;
+
+                const closeSpan = document.createElement('span');
+                closeSpan.className = 'text-gray-400 hover:text-black px-1 rounded';
+                closeSpan.textContent = '×';
+                closeSpan.onclick = (e) => {
+                    e.stopPropagation();
+                    if (tabs.length === 1) return;
+                    const index = tabs.findIndex(t => t.id === tab.id);
+                    ipcRenderer.send('close-tab', tab.id);
+                    tabs.splice(index, 1);
+                    if (activeTabId === tab.id) switchTab(tabs[tabs.length - 1].id);
+                    else renderTabs();
+                };
+
+                tabEl.appendChild(titleSpan);
+                tabEl.appendChild(closeSpan);
+                tabContainer.insertBefore(tabEl, newTabBtn);
+            });
+        }
+
+        newTabBtn.onclick = () => createTab();
+
+        urlInput.onkeydown = (e) => {
+            if (e.key === 'Enter') ipcRenderer.send('navigate', { tabId: activeTabId, url: urlInput.value });
+        };
+
+        function openFindBar() {
+            findBar.classList.remove('hidden');
+            findBar.classList.add('flex');
+            browserToolbar.style.height = '142px';
+            sideModal.style.top = '142px';
+            sideModal.style.height = 'calc(100vh - 142px)';
+            ipcRenderer.send('find-bar-toggle', true);
+            findInput.focus();
+            findInput.select();
+        }
+
+        function closeFindBar() {
+            findBar.classList.add('hidden');
+            findBar.classList.remove('flex');
+            browserToolbar.style.height = '100px';
+            sideModal.style.top = '100px';
+            sideModal.style.height = 'calc(100vh - 100px)';
+            ipcRenderer.send('find-bar-toggle', false);
+            ipcRenderer.send('stop-find-in-page', activeTabId);
+            findHasStarted = false;
+            findCount.textContent = '0 matches';
+        }
+
+        function searchInPage(forward = true) {
+            const text = findInput.value;
+            ipcRenderer.send('find-in-page', {
+                tabId: activeTabId,
+                text,
+                forward,
+                findNext: findHasStarted
+            });
+            findHasStarted = Boolean(text);
+        }
+
+        function navigateFindResult(forward) {
+            if (findInput.value) searchInPage(forward);
+        }
+
+        document.getElementById('findBtn').onclick = openFindBar;
+        document.getElementById('closeFind').onclick = closeFindBar;
+        document.getElementById('findPrevious').onclick = () => navigateFindResult(false);
+        document.getElementById('findNext').onclick = () => navigateFindResult(true);
+        findInput.oninput = () => {
+            findHasStarted = false;
+            searchInPage(true);
+        };
+        findInput.onkeydown = (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                navigateFindResult(!e.shiftKey);
+            }
+            if (e.key === 'Escape') closeFindBar();
+        };
+
+        document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+                e.preventDefault();
+                openFindBar();
+            } else if (e.key === 'Escape' && !findBar.classList.contains('hidden')) {
+                closeFindBar();
+            } else if (e.altKey && e.key === 'ArrowLeft') {
+                ipcRenderer.send('nav-action', { tabId: activeTabId, action: 'back' });
+            } else if (e.altKey && e.key === 'ArrowRight') {
+                ipcRenderer.send('nav-action', { tabId: activeTabId, action: 'forward' });
+            }
+        });
+
+        ipcRenderer.on('find-result', (event, result) => {
+            if (result.tabId !== activeTabId) return;
+            findCount.textContent = result.matches
+                ? `${result.activeMatchOrdinal} of ${result.matches}`
+                : (findInput.value ? 'No matches' : '0 matches');
+        });
+
+        backBtn.onclick = () => ipcRenderer.send('nav-action', { tabId: activeTabId, action: 'back' });
+        forwardBtn.onclick = () => ipcRenderer.send('nav-action', { tabId: activeTabId, action: 'forward' });
+        reloadBtn.onclick = () => ipcRenderer.send('nav-action', { tabId: activeTabId, action: 'reload' });
+
+        starBtn.onclick = async () => {
+            const currentTab = tabs.find(t => t.id === activeTabId);
+            if (!currentTab || !currentTab.url.startsWith('http')) return;
+            const isBookmarked = await ipcRenderer.invoke('toggle-bookmark', {
+                url: currentTab.url,
+                title: currentTab.title
+            });
+            starBtn.textContent = isBookmarked ? '★' : '☆';
+            starBtn.classList.toggle('text-amber-600', isBookmarked);
+        };
+
+        bookmarksMenuBtn.onclick = async () => {
+            const data = await ipcRenderer.invoke('get-data');
+            modalTitle.textContent = 'Saved Bookmarks';
+            modalContent.innerHTML = '';
+
+            if (!data.bookmarks || data.bookmarks.length === 0) {
+                modalContent.innerHTML = '<div class="text-gray-400 text-center py-6">No bookmarks yet. Click the ⭐ star icon to save a page.</div>';
+            } else {
+                data.bookmarks.forEach(item => {
+                    modalContent.appendChild(createPageEntry(item));
+                });
+            }
+            setDrawerOpen(true);
+        };
+
+        historyBtn.onclick = async () => {
+            const data = await ipcRenderer.invoke('get-data');
+            modalTitle.textContent = 'Browsing History';
+            modalContent.innerHTML = '';
+            
+            if (!data.history || data.history.length === 0) {
+                modalContent.innerHTML = '<div class="text-gray-400 text-center py-6">No history recorded yet.</div>';
+            } else {
+                data.history.forEach(item => {
+                    modalContent.appendChild(createPageEntry(item));
+                });
+            }
+            setDrawerOpen(true);
+        };
+
+        ipcRenderer.on('url-updated', (event, { tabId, url }) => {
+            const tab = tabs.find(t => t.id === tabId);
+            if (tab) {
+                tab.url = url;
+                try {
+                    const parsed = new URL(url);
+                    tab.title = parsed.hostname.replace('www.', '');
+                } catch {
+                    tab.title = url;
+                }
+                if (tabId === activeTabId) urlInput.value = url;
+                renderTabs();
+                ipcRenderer.send('add-history', { url, title: tab.title });
+                if (tabId === activeTabId) {
+                    ipcRenderer.invoke('get-data').then(data => {
+                        const isBookmarked = data.bookmarks.some(bookmark => bookmark.url === url);
+                        starBtn.textContent = isBookmarked ? '★' : '☆';
+                        starBtn.classList.toggle('text-amber-600', isBookmarked);
+                    });
+                }
+            }
+        });
+
+        createTab('https://www.google.com');
+    </script>
+</body>
+</html>
